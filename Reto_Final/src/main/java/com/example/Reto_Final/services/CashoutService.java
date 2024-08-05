@@ -30,18 +30,14 @@ public class CashoutService implements ICashoutService {
         return userService.ObtenerUsuarioPorId(cashout.getUserId())
                 .filter(user -> user.getBalance() >= cashout.getAmount())
                 .switchIfEmpty(Mono.error(new InsufficientBalanceException("Balance insuficiente para realizar el cashout")))
-                .flatMap(user ->
-                        paymentRestClient.RealizaPago(user.getId(), cashout.getAmount())
+                .flatMap(user -> paymentRestClient.RealizaPago(user.getId(), cashout.getAmount())
                                 .doOnError(throwable -> System.out.println("Se generó un problema: " + throwable.getMessage()))
-                                .flatMap(resultado -> {
-                                    switch (resultado) {
-                                        case "Rejected":
-                                            return Mono.error(new PaymentException(resultado));
-                                        default:
-                                            return userService.ActualizarBalance(cashout.getUserId(), cashout.getAmount());
+                                .flatMap(resultado -> switch (resultado) {
+                                        case "Rejected" -> Mono.error(new PaymentException(resultado));
+                                        case "Approved" -> userService.ActualizarBalance(cashout.getUserId(), cashout.getAmount());
+                                        default -> Mono.error(new PaymentException("Resultado no valido"));
                                     }
-                                })
-                )
+                                ))
                 .flatMap(updatedUser -> cashoutRepository.save(cashout)
                         .doOnError(error -> System.err.println("Error al realizar el cashout: " + error.getMessage()))
                         .doOnSuccess(cashoutResult -> System.out.println("Cashout realizado exitosamente: " + cashout.getAmount() + " al usuario: " + cashout.getUserId()))
